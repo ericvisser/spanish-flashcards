@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import words from "../data/words.json";
-import { cardKey, createProfile, currentStreak, getStudyQueue, PLACEMENT_LEVEL, recordAnswer } from "./profile.js";
+import {
+  cardKey,
+  createProfile,
+  currentStreak,
+  getStudyQueue,
+  PLACEMENT_LEVEL,
+  recordAnswer,
+  spreadPlacement,
+} from "./profile.js";
 import { addDays, MAX_LEVEL } from "./srs.js";
 
 const DAY = "2026-10-28";
@@ -17,14 +25,60 @@ describe("createProfile", () => {
     const esEn = (rank) => profile.cards[cardKey(words[rank - 1].es, "es-en")];
     const enEs = (rank) => profile.cards[cardKey(words[rank - 1].es, "en-es")];
 
+    // 50 skipped words at 20 a day is 3 days, dealt out in turn.
     expect(Object.keys(profile.cards)).toHaveLength(100);
     expect(esEn(1).level).toBe(PLACEMENT_LEVEL);
     expect(esEn(1).due).toBe(DAY);
-    expect(esEn(20).due).toBe(DAY);
-    expect(esEn(21).due).toBe(addDays(DAY, 1));
-    expect(esEn(50).due).toBe(addDays(DAY, 2));
+    expect(esEn(2).due).toBe(addDays(DAY, 1));
+    expect(esEn(3).due).toBe(addDays(DAY, 2));
+    expect(esEn(4).due).toBe(DAY);
     expect(enEs(1).due).toBe(addDays(DAY, 3));
     expect(esEn(51)).toBeUndefined();
+    expect(profile.placementSpread).toBe(true);
+  });
+
+  it("mixes easy and harder skipped words on the first day", () => {
+    const profile = createProfile({ name: "Test", startRank: 501, newPerDay: 10 }, words, DAY);
+    const { reviews } = getStudyQueue(profile, words, DAY);
+    const ranks = reviews.map((r) => words.findIndex((w) => w.es === r.wordId) + 1);
+    expect(reviews).toHaveLength(20);
+    expect(Math.max(...ranks)).toBeGreaterThan(450);
+  });
+});
+
+describe("spreadPlacement", () => {
+  // An old-style profile: skipped words checked in order, 20 a day, easiest first.
+  function oldProfile() {
+    const profile = createProfile({ name: "Test", startRank: 101, newPerDay: 10 }, words, DAY);
+    words.slice(0, 100).forEach((w, i) => {
+      const due = addDays(DAY, Math.floor(i / 20));
+      profile.cards[cardKey(w.es, "es-en")].due = due;
+      profile.cards[cardKey(w.es, "en-es")].due = addDays(due, 3);
+    });
+    delete profile.placementSpread;
+    return profile;
+  }
+
+  it("re-deals unanswered checks across the range, starting today", () => {
+    const later = addDays(DAY, 1);
+    const profile = spreadPlacement(oldProfile(), words, later);
+    const due = (rank, dir = "es-en") => profile.cards[cardKey(words[rank - 1].es, dir)].due;
+    expect(due(1)).toBe(later);
+    expect(due(2)).toBe(addDays(later, 1));
+    expect(due(6)).toBe(later);
+    expect(due(1, "en-es")).toBe(addDays(later, 3));
+    expect(profile.placementSpread).toBe(true);
+  });
+
+  it("leaves answered cards alone", () => {
+    const answered = recordAnswer(oldProfile(), "el", "es-en", true, DAY).profile;
+    const before = answered.cards["el|es-en"];
+    expect(spreadPlacement(answered, words, DAY).cards["el|es-en"]).toBe(before);
+  });
+
+  it("only runs once", () => {
+    const profile = spreadPlacement(oldProfile(), words, DAY);
+    expect(spreadPlacement(profile, words, addDays(DAY, 5))).toBe(profile);
   });
 });
 
@@ -46,7 +100,8 @@ describe("getStudyQueue", () => {
   it("doesn't count skipped words against the new word limit", () => {
     const profile = createProfile({ name: "Test", startRank: 51, newPerDay: 10 }, words, DAY);
     const { reviews, newWords } = getStudyQueue(profile, words, DAY);
-    expect(reviews).toHaveLength(20);
+    // 50 skipped words dealt over 3 days: 17, 17, 16.
+    expect(reviews).toHaveLength(17);
     expect(newWords).toHaveLength(10);
     expect(newWords[0].wordId).toBe(words[50].es);
   });

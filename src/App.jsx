@@ -1,7 +1,7 @@
 import { useState } from "react";
 import words from "./data/words.json";
 import { emitLearningEvents } from "./lib/events.js";
-import { createProfile, getStudyQueue, recordAnswer } from "./lib/profile.js";
+import { createProfile, getStudyQueue, recordAnswer, spreadPlacement } from "./lib/profile.js";
 import { buildPracticeQueue, buildSessionQueue } from "./lib/session.js";
 import { toDay } from "./lib/srs.js";
 import { clearProfile, loadProfile, saveProfile } from "./lib/storage.js";
@@ -12,16 +12,27 @@ import Practice from "./screens/Practice.jsx";
 import Stats from "./screens/Stats.jsx";
 import Settings from "./screens/Settings.jsx";
 
+// Brings an older saved profile (or backup) up to date.
+function upgrade(profile) {
+  return profile && spreadPlacement(profile, words, toDay());
+}
+
 export default function App() {
-  const [profile, setProfile] = useState(loadProfile);
+  const [profile, setProfile] = useState(() => {
+    const saved = loadProfile();
+    const upgraded = upgrade(saved);
+    if (upgraded !== saved) saveProfile(upgraded);
+    return upgraded;
+  });
   // Which screen is showing: "home", "study", "practice", "stats" or "settings".
   // A study session also carries its queue, and its answer style when it's practice.
   const [view, setView] = useState({ screen: "home" });
   const [saveFailed, setSaveFailed] = useState(false);
 
   function updateProfile(next) {
-    setProfile(next);
-    setSaveFailed(!saveProfile(next));
+    const upgraded = upgrade(next);
+    setProfile(upgraded);
+    setSaveFailed(!saveProfile(upgraded));
   }
 
   function handleCreate(choices) {

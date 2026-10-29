@@ -34,16 +34,22 @@ export function parseCardKey(key) {
   return { wordId, direction };
 }
 
+// Which day (0 = today) each of `count` skipped words comes up for its check. Words are
+// dealt out like cards, so every day gets a mix from across the whole skipped range
+// instead of the easiest words first.
+function placementDay(index, count) {
+  return index % Math.ceil(count / PLACEMENT_PER_DAY);
+}
+
 export function createProfile({ name, startRank, newPerDay }, words, today) {
   const cards = {};
-  words
-    .filter((w) => w.rank < startRank)
-    .forEach((w, i) => {
-      const due = addDays(today, Math.floor(i / PLACEMENT_PER_DAY));
-      const placed = { ...newCard(today), level: PLACEMENT_LEVEL, placed: true };
-      cards[cardKey(w.es, DIRECTIONS.ES_EN)] = { ...placed, due };
-      cards[cardKey(w.es, DIRECTIONS.EN_ES)] = { ...placed, due: addDays(due, PLACEMENT_EN_ES_DELAY_DAYS) };
-    });
+  const skipped = words.filter((w) => w.rank < startRank);
+  skipped.forEach((w, i) => {
+    const due = addDays(today, placementDay(i, skipped.length));
+    const placed = { ...newCard(today), level: PLACEMENT_LEVEL, placed: true };
+    cards[cardKey(w.es, DIRECTIONS.ES_EN)] = { ...placed, due };
+    cards[cardKey(w.es, DIRECTIONS.EN_ES)] = { ...placed, due: addDays(due, PLACEMENT_EN_ES_DELAY_DAYS) };
+  });
 
   return {
     version: 1,
@@ -53,7 +59,27 @@ export function createProfile({ name, startRank, newPerDay }, words, today) {
     settings: { ...DEFAULT_SETTINGS, newPerDay },
     streak: { count: 0, lastDay: null },
     cards,
+    placementSpread: true,
   };
+}
+
+// Profiles made before placementSpread existed checked skipped words easiest first.
+// Re-deals the checks that haven't been answered yet, starting today. Runs once.
+export function spreadPlacement(profile, words, today) {
+  if (profile.placementSpread) return profile;
+
+  const isUnanswered = (key) => profile.cards[key]?.placed && profile.cards[key].lastAnswered === null;
+  const pending = words.filter((w) => isUnanswered(cardKey(w.es, DIRECTIONS.ES_EN)));
+  const cards = { ...profile.cards };
+  pending.forEach((w, i) => {
+    const due = addDays(today, placementDay(i, pending.length));
+    const esEn = cardKey(w.es, DIRECTIONS.ES_EN);
+    const enEs = cardKey(w.es, DIRECTIONS.EN_ES);
+    cards[esEn] = { ...cards[esEn], due };
+    if (isUnanswered(enEs)) cards[enEs] = { ...cards[enEs], due: addDays(due, PLACEMENT_EN_ES_DELAY_DAYS) };
+  });
+
+  return { ...profile, cards, placementSpread: true };
 }
 
 // Checks that a backup file really holds a profile before it replaces the current one.
