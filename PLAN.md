@@ -2,6 +2,12 @@
 
 A flashcard web app for learning the ~2,000 most common Spanish words, using spaced repetition. Built for us first, shareable with friends, with a Pokémon game layer planned for later.
 
+## Live site
+
+https://ericvisser.github.io/spanish-flashcards/ (code: https://github.com/ericvisser/spanish-flashcards)
+
+Every push to `main` re-deploys automatically: GitHub checks the word list, runs the tests, builds, and publishes (`.github/workflows/deploy.yml`). If any check fails, the live site stays as it was.
+
 ## Running it
 
 From the `spanish-flashcards` folder:
